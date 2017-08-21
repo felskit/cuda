@@ -1,0 +1,202 @@
+---
+title: "<p class='title'>Łamanie szyfru DES metodą brute force</p>"
+author: "<p class='title'>Tymon Felski</p>"
+date: "<p class='title'>7 czerwca 2017</p>"
+output:
+  html_document:
+    toc: false
+    toc_depth: 4
+---
+
+<style>
+	.title {
+		text-align: center;
+	}
+</style>
+
+```{r, echo = FALSE, message = FALSE}
+library("plotly")
+set.seed(2137)
+```
+
+###**Wstęp**
+W przypadku rzeczywistej próby rozszyfrowania przechwyconej wiadomości należałoby sprawdzać wszystkie pary klucz - wiadomość i weryfikować czy przechwycona wiadomość po odszyfrowaniu kluczem jest równa wiadomości z badanej pary. Wymaga to jednak dla zaszyfrowanej wiadomości o długości 64 bitów sprawdzania wszystkich par klucz - wiadomość, gdzie wiadomość ma również długość 64 bity, a klucz ma 56 efektywnych bitów (biorących udział w dekrypcji) - daje to $2^{120}$ kombinacji. Podejście to było niewykonalne na mojej maszynie.
+
+###**1. Opis implementacji**
+Zaimplementowany kernel dostaje oryginalną i zaszyfrowaną wiadomość, po czym sprawdza wszystkie klucze aż trafi na ten, dzięki któremu wiadomość po odszyfrowaniu będzie równa oryginalnej. Wówczas obliczenia na wszystkich wątkach zostają przerwane. Dodatkowo, na potrzeby testowania i ułatwienia sprawdzenia poprawności, przekazywany jest parametr `knownLeadingZeros`, który "skraca" klucz (informuje kernel ile początkowych bitów w kluczu to zera, przez co ich uzupełnianie nie jest konieczne).
+
+Uruchamiane jest $2^{21}$ wątków, dzięki czemu na starcie numery id wątków mogą zostać użyte do wypełnienia ostatnich 24 bitów klucza (21 znaczących i 3 nieznaczących). Pozostałe 40 bitów (35 znaczących) jest uzupełniane przez każdy wątek w pętli. Jeżeli paramert `knownLeadingZeros` (ozn. N) jest różny od zera, to pętla zostanie odpowiednio skrócona, aby pierwsze N bitów nie było uzupełnianych.
+
+Wówczas klucz można schematyczne zapisać w postaci `LLLLLLLxLLLLLLLxLLLLLLLxLLLLLLLxLLLLLLLxTTTTTTTxTTTTTTTxTTTTTTTx`, przy czym `x` oznacza bity nieznaczące, `L` stoi w miejscu bitów wyznaczanych w pętli wątku, a bity uzupełniane przy pomocy numeru id wątku są oznaczone przez `T`.
+
+Cała implementacja opiera się na kodowaniu kluczy i wiadomości w liczbach typu `uint_64t`. Pozwala to na osiągnięcie optymalniejszej wersji dekryptora (zarówno czasowo, jak i pamięciowo), ponieważ przewaga operacji bitowych i konieczności trzymania tylko kilku zmiennych typu `uint_64t` nad porównywaniem tablic charów jest znacząca. Ponadto niektóre tablice i zmienne pomocnicze wykorzystywane przy dekrypcji są używane wielokrotnie, co pozwala zaoszczędzić jeszcze trochę pamięci.
+
+###**2. Porównanie wyników**
+Pomimo powyższych optymalizacji wersja zaimplementowana na CPU nie radziła sobie z odszyfrowaniem wiadomości w rozsądnym czasie, więc jej nie dołączam. Zdecydowałem się za to porównać kilka wywołań wersji GPU dla różnych wartości parametru `knownLeadingZeros`. Klucz był uzupełniany jedynkami, aby wszystkie wątki doszły do końca pętli, dzięki czemu poznany został pesymistyczny czas trwania dekrypcji.
+
+Poniżej umieściłem output z konsoli z wywołań dla `knownLeadingZeros` pomiędzy 39 i 32 włącznie.
+
+**1.** knownLeadingZeros = 39 (nieznane jest tylko ostatnie 25 bitów, czyli 21 znaczących - uzupełniane numerem id)
+```
+KKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKxTTTTTTTxTTTTTTTxTTTTTTTx  <-  schemat klucza (K - znane bity)
+0000000000000000000000000000000000000000111111101111111011111110  <-  użyty klucz
+```
+```
+ Original     key: 0000000000FEFEFE
+ Original message: 0123456789ABCDEF
+Encrypted message: F9B5DFC79D6C7CC0
+
+Cracking DES on GPU starting...
+Computing finished
+Elapsed time (GPU): 1.271000 seconds
+
+  Cracked     key: 0000000000FEFEFE
+Decrypted message: 0123456789ABCDEF
+```
+**2.** knownLeadingZeros = 38 (konieczność uzupełnienia 1 bitu w pętli)
+```
+KKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKLxTTTTTTTxTTTTTTTxTTTTTTTx
+0000000000000000000000000000000000000010111111101111111011111110
+```
+```
+ Original     key: 0000000002FEFEFE
+ Original message: 0123456789ABCDEF
+Encrypted message: 01BDD3745D8DB79E
+
+Cracking DES on GPU starting...
+Computing finished
+Elapsed time (GPU): 1.549000 seconds
+
+  Cracked     key: 0000000002FEFEFE
+Decrypted message: 0123456789ABCDEF
+```
+**3.** knownLeadingZeros = 37 (konieczność uzupełnienia 2 bitów w pętli)
+```
+KKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKLLxTTTTTTTxTTTTTTTxTTTTTTTx
+0000000000000000000000000000000000000110111111101111111011111110
+```
+```
+ Original     key: 0000000006FEFEFE
+ Original message: 0123456789ABCDEF
+Encrypted message: 9F087C0B4392C562
+
+Cracking DES on GPU starting...
+Computing finished
+Elapsed time (GPU): 2.634000 seconds
+
+  Cracked     key: 0000000006FEFEFE
+Decrypted message: 0123456789ABCDEF
+```
+**4.** knownLeadingZeros = 36 (konieczność uzupełnienia 3 bitów w pętli)
+```
+KKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKLLLxTTTTTTTxTTTTTTTxTTTTTTTx
+0000000000000000000000000000000000001110111111101111111011111110
+```
+```
+ Original     key: 000000000EFEFEFE
+ Original message: 0123456789ABCDEF
+Encrypted message: CE0000D3AF1A8CE6
+
+Cracking DES on GPU starting...
+Computing finished
+Elapsed time (GPU): 4.801000 seconds
+
+  Cracked     key: 000000000EFEFEFE
+Decrypted message: 0123456789ABCDEF
+```
+**5.** knownLeadingZeros = 35 (konieczność uzupełnienia 4 bitów w pętli)
+```
+KKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKLLLLxTTTTTTTxTTTTTTTxTTTTTTTx
+0000000000000000000000000000000000011110111111101111111011111110
+```
+```
+ Original     key: 000000001EFEFEFE
+ Original message: 0123456789ABCDEF
+Encrypted message: F0580DC52F568811
+
+Cracking DES on GPU starting...
+Computing finished
+Elapsed time (GPU): 9.163000 seconds
+
+  Cracked     key: 000000001EFEFEFE
+Decrypted message: 0123456789ABCDEF
+```
+**6.** knownLeadingZeros = 34 (konieczność uzupełnienia 5 bitów w pętli)
+```
+KKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKLLLLLxTTTTTTTxTTTTTTTxTTTTTTTx
+0000000000000000000000000000000000111110111111101111111011111110
+```
+```
+ Original     key: 000000003EFEFEFE
+ Original message: 0123456789ABCDEF
+Encrypted message: B9E897D29208A83F
+
+Cracking DES on GPU starting...
+Computing finished
+Elapsed time (GPU): 17.872999 seconds
+
+  Cracked     key: 000000003EFEFEFE
+Decrypted message: 0123456789ABCDEF
+```
+**7.** knownLeadingZeros = 33 (konieczność uzupełnienia 6 bitów w pętli)
+```
+KKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKLLLLLLxTTTTTTTxTTTTTTTxTTTTTTTx
+0000000000000000000000000000000001111110111111101111111011111110
+```
+```
+ Original     key: 000000007EFEFEFE
+ Original message: 0123456789ABCDEF
+Encrypted message: 1CC9966AC3D1C8CE
+
+Cracking DES on GPU starting...
+Computing finished
+Elapsed time (GPU): 35.334999 seconds
+
+  Cracked     key: 000000007EFEFEFE
+Decrypted message: 0123456789ABCDEF
+```
+**8.** knownLeadingZeros = 32 (konieczność uzupełnienia 7 bitów w pętli)
+```
+KKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKLLLLLLLxTTTTTTTxTTTTTTTxTTTTTTTx
+0000000000000000000000000000000011111110111111101111111011111110
+```
+```
+ Original     key: 00000000FEFEFEFE
+ Original message: 0123456789ABCDEF
+Encrypted message: C07A07B5D91E347A
+
+Cracking DES on GPU starting...
+Computing finished
+Elapsed time (GPU): 70.070000 seconds
+
+  Cracked     key: 00000000FEFEFEFE
+Decrypted message: 0123456789ABCDEF
+```
+
+Na poniższym wykresie znajdują się czasy z wypisanych wcześniej wywołań (wykres interaktywny, korzysta z JavaScriptu).
+
+<center>
+```{r, echo = FALSE}
+knownLeadingZeros <- seq(39, 32, by = -1)
+times <- c(1.271000, 1.549000, 2.634000, 4.801000, 9.163000, 17.872999, 35.334999, 70.070000)
+
+config(plot_ly() %>%
+  add_trace(x = ~knownLeadingZeros, y = ~times,
+            line = list(
+              width = 0.5,
+              dash = "dot"
+            ),
+            name = "err",
+            mode = "lines+markers",
+            type = "scatter") %>%
+  layout(
+    title = "Czasy łamania szyfru dla różnych wartości knownLeadingZeros",
+    xaxis = list(title = "knownLeadingZeros"),
+    yaxis = list(title = "czas [s]")
+  ),
+  displayModeBar = FALSE
+)
+```
+</center>
+</br>
+Łatwo zauważyć, że wraz ze spadkiem liczby znanych zer na początku klucza czas łamania szyfru rośnie wykładniczo, co jest zgodne z przewidywaniami.

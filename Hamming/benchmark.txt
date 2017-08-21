@@ -1,0 +1,59 @@
+## Wersja GPU bez preprocesingu reduce i losowymi danymi (0 par)
+	Randomizing of 256 sequences 1048576 bits each starting...
+	Randomizing finished
+
+	Computing on GPU starting...
+	Computing finished
+	Elapsed time (GPU): 2.480000 seconds
+
+	Found 0 pairs with Hamming distance of 1
+	
+Powy¿szy czas uzyska³em uruchamiaj¹c star¹ wersjê projektu
+
+## Wersja GPU z preprocesingiem reduce i losowymi danymi (0 par)
+	Generating 256 sequences 1048576 bits each starting...
+	Generating finished
+
+	Computing on GPU starting...
+	Computing finished
+	Elapsed time (GPU): 0.478000 seconds
+
+	Found 0 pairs with Hamming distance of 1
+
+Powy¿szy wynik pokazuje przewagê rozwi¹zania z preprocesingiem
+
+## Porównanie wersji GPU i CPU przy liczbie par rzêdu n (dok³. n-1)
+	Generating 256 sequences 1048576 bits each starting...
+	Generating finished
+
+	Computing on GPU starting...
+	Computing finished
+	Elapsed time (GPU): 0.481000 seconds
+
+	Found 255 pairs with Hamming distance of 1
+
+	Computing on CPU starting...
+	Computing finished
+	Elapsed time (CPU): 0.389000 seconds
+
+	Found 255 pairs with Hamming distance of 1
+	
+Dla ma³ej liczby par w ci¹gach oba rozwi¹zania osi¹gaj¹ porównywalne czasy
+
+## Porównanie wersji GPU i CPU przy liczbie par rzêdu n^2 (dok³. n^2/4)
+	Generating 256 sequences 1048576 bits each starting...
+	Generating finished
+
+	Computing on GPU starting...
+	Computing finished
+	Elapsed time (GPU): 1.941000 seconds
+
+	Found 16384 pairs with Hamming distance of 1
+
+	Computing on CPU starting...
+	Computing finished
+	Elapsed time (CPU): 7.594000 seconds
+
+	Found 16384 pairs with Hamming distance of 1
+	
+Dla znacznie wiêkszej liczby par zdecydowan¹ przewagê ma wersja GPU
